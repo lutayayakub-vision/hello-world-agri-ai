@@ -1,24 +1,74 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Home — Your account dashboard" },
+      {
+        name: "description",
+        content: "Sign in to view your account and profile details.",
+      },
+      { property: "og:title", content: "Home — Your account dashboard" },
+      {
+        property: "og:description",
+        content: "Sign in to view your account and profile details.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  ssr: false,
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [displayName, setDisplayName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setDisplayName(null);
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data }) => setDisplayName(data?.display_name ?? null));
+  }, [user]);
+
+  async function handleSignOut() {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", replace: true });
+  }
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background px-4 text-center">
+      <h1 className="text-4xl font-bold tracking-tight text-foreground">
+        {loading ? "Loading…" : user ? `Hi, ${displayName ?? user.email}` : "Welcome"}
+      </h1>
+      <p className="max-w-md text-muted-foreground">
+        {user
+          ? "You're signed in. Your profile is stored securely in your account."
+          : "Create an account or sign in to get started."}
+      </p>
+      {loading ? null : user ? (
+        <Button onClick={handleSignOut}>Sign out</Button>
+      ) : (
+        <Button asChild>
+          <Link to="/auth">Sign in</Link>
+        </Button>
+      )}
+    </main>
   );
 }
